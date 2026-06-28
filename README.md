@@ -1,6 +1,6 @@
 # Rent Freeze Agent-Based Simulation
 
-PhD-grade agent-based model of rental housing under rent freeze policy: heterogeneous landlords and tenants, search frictions, endogenous maintenance, Monte Carlo counterfactuals, and an auto-generated LaTeX paper.
+Agent-based model of rental housing under rent freeze policy: heterogeneous landlords and tenants, search frictions, endogenous maintenance, Monte Carlo counterfactuals, and an auto-generated LaTeX paper.
 
 ## Final deliverable
 
