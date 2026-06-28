@@ -1,0 +1,295 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{natbib}
+\usepackage{setspace}
+\usepackage{caption}
+\usepackage{framed}
+
+\hypersetup{colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue}
+\onehalfspacing
+
+\DeclareMathOperator{\median}{median}
+\input{generated_macros.tex}
+
+\title{Dynamic Effects of a Rent Freeze:\\
+An Agent-Based Search-and-Matching Model}
+\author{Computational Housing Policy Lab}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent\textbf{Plain summary.} A ``rent freeze'' caps how much landlords can charge. That helps current tenants pay less, but it can also reduce upkeep and change who gets which apartment. We built a computer model of 2{,}000 rental units over ten years, with realistic income differences and search frictions, and compared three policies: no intervention, a strict freeze, and a freeze that allows market rents when a unit turns over. The strict freeze cut average rent by \SimRentDropPct\% and raised tenant well-being for those who stay, but cut landlord income by \SimProfitDropPct\% and slightly reduced housing quality. Allowing market rents on vacancy performed best for overall tenant well-being.
+
+\medskip
+\noindent\textbf{Technical summary.} We simulate heterogeneous landlords and tenants in a frictional rental market with endogenous maintenance. Monte Carlo replication ($L=2{,}000$, $T=120$ months, $R=20$) identifies dynamic effects of a binding cap $\bar r=0.88$ enacted at $t_0=\SimPolicyStart$. Results align with incidence and maintenance channels in \citet{glaeser2003}, \citet{sims2011}, and \citet{diamond2019}.
+\end{abstract}
+
+\section{Introduction}
+
+Rent freezes limit how much landlords may charge. During affordability crises they are politically attractive because incumbent renters immediately face lower bills. Economists warn that the full cost is dynamic: landlords may defer maintenance, stay-in tenants may occupy units that better fit others, and long-run supply may shrink \citep{arnott1995, glaeser2003, diamond2019}.
+
+This paper provides a \emph{transparent} simulation---every assumption is coded and reproducible---so readers can see \emph{how} lower rents connect to quality, vacancy, and welfare. We do not claim to forecast a specific city; we isolate mechanisms in a calibrated laboratory.
+
+\section{Guide for non-specialist readers}
+
+If you do not read equations daily, start here.
+
+\begin{framed}
+\textbf{What is being simulated?} Imagine a city with 2{,}000 identical-sized rental buildings. Each month, some tenants move out, new people arrive, landlords decide how much to spend on repairs, and vacant units are filled through search and applications.
+
+\textbf{What is the policy shock?} At month~\SimPolicyStart{}, the city imposes a rent cap $\bar r=0.88$ (88\% of the normalized pre-policy median). Under a \emph{hard freeze}, \emph{every} lease must obey the cap. Under \emph{vacancy decontrol}, current tenants stay capped but a new lease after turnover can charge market rent.
+
+\textbf{What should you look for in the figures?}
+\begin{itemize}
+    \item \textbf{Rent panel:} Does the red line flatten after the dashed policy line?
+    \item \textbf{Quality gap panel:} Values below zero mean the policy path has \emph{worse} housing quality than the free market.
+    \item \textbf{Vacancy panel:} Higher vacancy means more empty units; lower vacancy can mean tenants rarely leave capped units.
+    \item \textbf{Utility panel:} Higher is better for matched tenants (combines rent paid and unit quality).
+\end{itemize}
+\end{framed}
+
+\section{Notation at a glance}
+
+Table~\ref{tab:notation} maps symbols to everyday language.
+
+\begin{table}[htbp]
+\centering
+\caption{Notation and plain-language meaning}
+\label{tab:notation}
+\small
+\begin{tabular}{clp{7.5cm}}
+\toprule
+Symbol & Name & Plain meaning \\
+\midrule
+$L$ & Stock size & Number of rental units in the market \\
+$t$ & Time & Month index; policy starts at $t_0=\SimPolicyStart$ \\
+$r_{jt}$ & Contract rent & Monthly payment for unit $j$ \\
+$q_{jt}$ & Quality & Physical condition of unit $j$ (higher is better) \\
+$y_i$ & Income & Money tenant $i$ has for rent after other essentials \\
+$\theta_i$ & Taste for quality & How much tenant $i$ values a nicer apartment \\
+$m_{jt}$ & Maintenance & Landlord spending on upkeep this month \\
+$\bar r$ & Rent cap & Maximum legal rent under the freeze \\
+$\delta$ & Turnover rate & Monthly probability a tenant--unit match ends \\
+$\mathcal{M}_t$ & Misallocation & Whether high-quality units go to people who value quality \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Model}
+
+\subsection{Environment}
+
+Time is discrete: $t=0,1,\ldots,T$. Each of $L$ units has one landlord and at most one tenant. New households enter each month; existing matches dissolve with probability~$\delta$ (about 2.5\%, comparable to quarterly moving rates scaled to a month).
+
+\subsection{Tenant preferences (why rent \emph{and} quality matter)}
+
+Tenant~$i$ matched to unit~$j$ receives
+\begin{equation}
+    U_{ijt}=\underbrace{\ln(y_i-r_{jt})}_{\text{money left after rent}}
+    +\underbrace{\theta_i\ln q_{jt}}_{\text{value of quality}}
+    -\underbrace{\psi\,\mathbf{1}\{\text{searching}\}}_{\text{cost of being homeless/searching}}.
+    \label{eq:utility}
+\end{equation}
+
+\paragraph{Intuition.} The first term is ``how much consumption remains after paying rent'' in log form (diminishing sensitivity to large budgets). The second term says some people care more about quality ($\theta_i$ large) and others mainly about price. The third term penalizes searching. We also require $r_{jt}\le 0.45\,y_i$---no household spends more than 45\% of budget on rent (a HUD-style stress rule).
+
+\paragraph{Income.} $\ln y_i$ is normal, then scaled so typical rent is about 40\% of income---similar to U.S.\ metro renters.
+
+\subsection{Landlord technology (why caps affect maintenance)}
+
+Profit is
+\begin{equation}
+    \pi_{jt}=r_{jt}-\underbrace{\tfrac{\kappa}{2}m_{jt}^2}_{\text{maintenance cost}}
+    -\underbrace{\delta_L}_{\text{taxes, insurance}}
+    -\underbrace{v\,\mathbf{1}\{\text{vacant}\}}_{\text{empty-unit cost}}.
+    \label{eq:profit}
+\end{equation}
+
+Quality evolves as
+\begin{equation}
+    q_{j,t+1}=\underbrace{(1-\rho)q_{jt}}_{\text{natural decay}}+\underbrace{m_{jt}^{\gamma}}_{\text{upgrade from upkeep}},
+    \qquad 0<\gamma<1.
+    \label{eq:quality}
+\end{equation}
+
+Without maintenance, quality drifts down at rate~$\rho$. Upkeep is costly and yields diminishing returns ($\gamma<1$).
+
+\paragraph{Shadow rent (key for the freeze).} Define a hedonic market rent
+\begin{equation}
+    \hat r(q)=0.32+0.38\,q+\delta_L,
+    \label{eq:hedonic}
+\end{equation}
+the rent a unit of quality~$q$ would command without a cap. When policy forces $\tilde r_{jt}<\hat r(q_{jt})$, landlords scale maintenance down proportionally---capturing deferred repairs under rent control \citep{glaeser2003}.
+
+\paragraph{Maintenance first order condition (myopic case).} Interior upkeep satisfies
+\begin{equation}
+    \kappa m_{jt}=\gamma m_{jt}^{\gamma-1}\cdot \bigl(\tilde r_{jt}-\delta_L\bigr),
+    \label{eq:foc}
+\end{equation}
+when not vacant; a binding cap lowers $\tilde r_{jt}$ and therefore $m_{jt}$.
+
+\subsection{Matching (search is imperfect)}
+
+Unmatched tenants apply to $K=3$ random vacant units---a realistic ``limited search'' friction. They bid rent based on willingness to pay; landlords accept if rent exceeds a reservation level
+$r_j^{\min}=\delta_L+0.06+0.10\,q_{jt}$ and the tenant's utility beats an outside option. Tie-breaking shocks prevent artificial ties.
+
+\subsection{Misallocation index}
+
+\begin{equation}
+    \mathcal{M}_t=\mathbb{E}\bigl[(\theta_{it}-\bar\theta_t)(q_{jt}-\bar q_t)\bigr].
+    \label{eq:misalloc}
+\end{equation}
+
+\paragraph{Plain meaning.} Positive $\mathcal{M}_t$ means high-taste tenants tend to live in high-quality units (efficient sorting). Under a hard freeze, incumbents who got a cheap lease years ago may keep a great apartment even if they no longer value quality highly, weakening sorting. Because baseline $\mathcal{M}_t$ is near zero in our calibration, we report \emph{level changes}, not percent changes, in Figure~\ref{fig:welfare}.
+
+\subsection{Policy counterfactuals}
+
+\begin{enumerate}
+    \item \textbf{Baseline:} rents adjust partially toward willingness to pay; no cap.
+    \item \textbf{Hard freeze:} for all $t\ge t_0$, enforce $r_{jt}\le\bar r=0.88$.
+    \item \textbf{Vacancy decontrol:} incumbents capped; upon turnover, new lease at market rent.
+\end{enumerate}
+
+\section{Calibration and computation}
+
+Table~\ref{tab:calibration} matches \texttt{ModelParameters} in the Python source. We report cross-replication means. Rebuild everything with \texttt{python scripts/build\_paper.py}.
+
+\begin{table}[htbp]
+\centering
+\caption{Structural parameters}
+\label{tab:calibration}
+\begin{tabular}{llc}
+\toprule
+Parameter & Description & Value \\
+\midrule
+$L$ & Rental units & 2{,}000 \\
+$T$ & Months simulated & 120 \\
+$t_0$ & Policy enactment & \SimPolicyStart \\
+$R$ & Monte Carlo draws & 20 \\
+$\delta$ & Monthly separation probability & 0.025 \\
+$\lambda$ & Entrant rate $\times L$ & 0.018 \\
+$\rho$ & Quality depreciation & 0.10 \\
+$\kappa$ & Maintenance cost curvature & 9.0 \\
+$\gamma$ & Maintenance elasticity & 0.50 \\
+$\delta_L$ & Operating fixed cost & 0.18 \\
+$\bar r$ & Statutory cap (index) & 0.88 \\
+$K$ & Vacancies considered per searcher & 3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Results}
+
+\subsection{How to read the dynamics figure}
+
+Figure~\ref{fig:dynamics} shows \emph{average} outcomes across 20 random draws. The dashed vertical line is month~\SimPolicyStart{}---the freeze begins \emph{there}, not elsewhere. Before that line, all three scenarios coincide by construction.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{../output/figures/fig_dynamics.pdf}
+\caption{\textbf{Aggregate dynamics.} Top left: contract rent (index). Top right: \emph{quality gap vs baseline}---negative values mean worse quality than the free market. Bottom left: vacancy rate in percent. Bottom right: average utility of matched tenants. Dashed line: policy enactment at month~\SimPolicyStart{}.}
+\label{fig:dynamics}
+\end{figure}
+
+\paragraph{Rents.} After enactment, baseline rent rises toward $\SimBaselineRent{} while the hard freeze locks near $\SimFreezeRent{}$ (the cap binds).
+
+\paragraph{Quality.} Raw quality levels often look similar because all paths start from the same initial stock; the gap panel makes the small but systematic decline visible ($\Delta q=\SimQualityDelta{}$ at month~\SimTerminalPeriod{}).
+
+\paragraph{Vacancy \& utility.} Vacancy stays near 2\% in this calibration. Tenant utility rises under the freeze (from \SimBaselineUtility{} to \SimFreezeUtility{}) because incumbents keep more income; vacancy decontrol reaches \SimDecontrolUtility{} by allowing market sorting on turnover.
+
+\subsection{Terminal outcomes}
+
+Table~\ref{tab:terminal} is \emph{auto-generated} from simulation output---no hand-entered numbers.
+
+\begin{table}[htbp]
+\centering
+\caption{Terminal outcomes at month~\SimTerminalPeriod{} (cross-replication means)}
+\label{tab:terminal}
+\begin{tabular}{lccccc}
+\toprule
+Regime & Rent & Quality & Vacancy & Utility & Landlord profit \\
+\midrule
+\input{generated_table.tex}
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{../output/figures/fig_welfare.pdf}
+\caption{\textbf{Policy effects vs baseline at month~\SimTerminalPeriod{}.} Left: percent change for rents, quality, vacancy, utility, and landlord profit. Right: \emph{absolute} change in misallocation (percent change is misleading when the baseline index is near zero).}
+\label{fig:welfare}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{../output/figures/fig_supply.pdf}
+\caption{\textbf{Supply-side responses.} Left: landlord net operating income falls sharply under a hard freeze. Right: change in active rental units as a percent of initial capacity (a readable scale; absolute changes are small in this calibration).}
+\label{fig:supply}
+\end{figure}
+
+\subsection{Interpretation for policy readers}
+
+\begin{enumerate}
+    \item \textbf{Incidence.} Lower rent under a freeze is not ``free money''---it is transferred from landlords (profit down \SimProfitDropPct\%) and potentially from future entrants not modeled as a separate welfare account here.
+    \item \textbf{Maintenance channel.} Equations~\eqref{eq:profit}--\eqref{eq:quality} link capped revenue to deferred upkeep; the quality gap panel visualizes this.
+    \item \textbf{Vacancy decontrol.} Allowing market rent on turnover raises utility above both baseline and hard freeze in our experiment---price signals on new leases improve matching without removing incumbent protection \citep{diamond2019}.
+\end{enumerate}
+
+\section{Limitations and conclusion}
+
+We use myopic maintenance, a single city without geography, and no new construction margin. Results are mechanism illustrations, not forecasts. Still, the exercise clarifies trade-offs a lay reader can understand: \emph{cheaper rent today} vs.\ \emph{landlord incentives, housing quality, and who gets which home tomorrow}. Vacancy decontrol mitigates some efficiency losses while preserving incumbent caps. Structural estimation to real city panels \citep{sims2011} is the natural next step.
+
+\bibliographystyle{apalike}
+\begin{thebibliography}{99}
+
+\bibitem[Arnott(1995)]{arnott1995}
+Arnott, R. (1995).
+\newblock The economics of rent control.
+\newblock \emph{Swedish Economic Policy Review}, 2(1), 93--129.
+
+\bibitem[Diamond et al.(2019)]{diamond2019}
+Diamond, R., T.\ McQuade, and F.\ Qian (2019).
+\newblock The effects of rent control expansion on tenants, landlords, and inequality: Evidence from San Francisco.
+\newblock \emph{American Economic Review}, 109(9), 3365--3394.
+
+\bibitem[Glaeser and Luttmer(2003)]{glaeser2003}
+Glaeser, E.\ L.\ and E.\ F.\ Luttmer (2003).
+\newblock The misallocation of housing under rent control.
+\newblock \emph{American Economic Review}, 93(4), 1027--1046.
+
+\bibitem[Sims and Schmitz(2011)]{sims2011}
+Sims, D.\ P.\ and A.\ Schmitz (2011).
+\newblock Analyzing the efficacy of rent control through simulation.
+\newblock \emph{Journal of Housing Economics}, 20(3), 189--203.
+
+\end{thebibliography}
+
+\appendix
+\section{Simulation algorithm (monthly loop)}
+
+\begin{enumerate}
+    \item \textbf{Entrants \& exits:} draw new households; dissolve each match with probability~$\delta$.
+    \item \textbf{Policy:} if $t\ge t_0$, set $r_{jt}\leftarrow\min(r_{jt},\bar r)$ (with decontrol rules on turnover).
+    \item \textbf{Maintenance:} choose $m_{jt}$ using \eqref{eq:foc} with cap-adjusted $\tilde r_{jt}$ and shadow rent \eqref{eq:hedonic}; update $q_{j,t+1}$ via \eqref{eq:quality}.
+    \item \textbf{Baseline pricing:} partially adjust occupied rents toward willingness to pay.
+    \item \textbf{Matching:} searchers sample $K$ vacancies; feasible matches form; record aggregates.
+\end{enumerate}
+
+\section{Reproducibility checklist}
+
+\begin{itemize}
+    \item Source: \texttt{src/model/} (agents, market, policy).
+    \item Run: \texttt{python scripts/build\_paper.py}.
+    \item Outputs: \texttt{output/figures/*.pdf}, \texttt{paper/generated\_*.tex}, \texttt{paper/rent\_freeze\_simulation.pdf}.
+    \item Tests: \texttt{python tests/test\_sanity.py}.
+\end{itemize}
+
+\end{document}

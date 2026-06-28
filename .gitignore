@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Simulation outputs (regenerate with scripts/build_paper.py)
+output/
+
+# LaTeX auxiliary files
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.synctex.gz
+
+# Keep generated stats and PDF in repo optional — uncomment to ignore:
+# paper/generated_*.tex
+# paper/rent_freeze_simulation.pdf
